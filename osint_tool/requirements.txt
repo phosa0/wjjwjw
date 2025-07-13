@@ -1,0 +1,8 @@
+customtkinter
+requests
+ipinfo
+beautifulsoup4
+Pillow
+PyPDF2
+whois
+dnspython
