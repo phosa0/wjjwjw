@@ -1,78 +1,45 @@
-#include "../include/injector.h"
-#include <tlhelp32.h>
-#include <stdexcept>
+#define UNICODE
+#define _UNICODE
 
-std::vector<ProcessInfo> get_process_list() {
-    std::vector<ProcessInfo> process_list;
-    HANDLE h_snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (h_snap == INVALID_HANDLE_VALUE) {
-        // In a real GUI app, you'd probably want to show an error message box
-        // For now, we can throw or return an empty list.
-        // Let's return an empty list to avoid crashing the app.
-        return process_list;
-    }
+#include <windows.h>
+#include <string>
 
-    PROCESSENTRY32W pe32; // Use the wide-character version
-    pe32.dwSize = sizeof(PROCESSENTRY32W);
+bool inject_dll(DWORD processID, const std::wstring& dllPath) {
+    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processID);
+    if (!hProcess) return false;
 
-    if (Process32FirstW(h_snap, &pe32)) { // Use the wide-character version
-        do {
-            ProcessInfo pi;
-            pi.pid = pe32.th32ProcessID;
-            pi.name = pe32.szExeFile;
-            process_list.push_back(pi);
-        } while (Process32NextW(h_snap, &pe32)); // Use the wide-character version
-    }
-
-    CloseHandle(h_snap);
-    return process_list;
-}
-
-bool inject_dll(DWORD pid, const std::wstring& dll_path) {
-    HANDLE h_proc = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE, FALSE, pid);
-    if (h_proc == NULL) {
+    size_t pathLen = (dllPath.length() + 1) * sizeof(wchar_t);
+    LPVOID pRemote = VirtualAllocEx(hProcess, NULL, pathLen, MEM_COMMIT, PAGE_READWRITE);
+    if (!pRemote) {
+        CloseHandle(hProcess);
         return false;
     }
 
-    size_t dll_path_size = (dll_path.length() + 1) * sizeof(wchar_t);
-    LPVOID remote_mem = VirtualAllocEx(h_proc, NULL, dll_path_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (remote_mem == NULL) {
-        CloseHandle(h_proc);
+    WriteProcessMemory(hProcess, pRemote, dllPath.c_str(), pathLen, NULL);
+
+    // ✅ Use Unicode version of GetModuleHandle
+    HMODULE h_kernel32 = GetModuleHandleW(L"kernel32.dll");
+    FARPROC loadLibAddr = GetProcAddress(h_kernel32, "LoadLibraryW");
+    if (!loadLibAddr) {
+        VirtualFreeEx(hProcess, pRemote, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
         return false;
     }
 
-    if (!WriteProcessMemory(h_proc, remote_mem, dll_path.c_str(), dll_path_size, NULL)) {
-        VirtualFreeEx(h_proc, remote_mem, 0, MEM_RELEASE);
-        CloseHandle(h_proc);
+    HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0,
+        (LPTHREAD_START_ROUTINE)loadLibAddr,
+        pRemote, 0, NULL);
+
+    if (!hThread) {
+        VirtualFreeEx(hProcess, pRemote, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
         return false;
     }
 
-    HMODULE h_kernel32 = GetModuleHandle(L"kernel32.dll");
-    if (h_kernel32 == NULL) {
-        VirtualFreeEx(h_proc, remote_mem, 0, MEM_RELEASE);
-        CloseHandle(h_proc);
-        return false;
-    }
-
-    LPTHREAD_START_ROUTINE load_library_addr = (LPTHREAD_START_ROUTINE)GetProcAddress(h_kernel32, "LoadLibraryW");
-    if (load_library_addr == NULL) {
-        VirtualFreeEx(h_proc, remote_mem, 0, MEM_RELEASE);
-        CloseHandle(h_proc);
-        return false;
-    }
-
-    HANDLE h_remote_thread = CreateRemoteThread(h_proc, NULL, 0, load_library_addr, remote_mem, 0, NULL);
-    if (h_remote_thread == NULL) {
-        VirtualFreeEx(h_proc, remote_mem, 0, MEM_RELEASE);
-        CloseHandle(h_proc);
-        return false;
-    }
-
-    WaitForSingleObject(h_remote_thread, INFINITE);
-
-    CloseHandle(h_remote_thread);
-    VirtualFreeEx(h_proc, remote_mem, 0, MEM_RELEASE);
-    CloseHandle(h_proc);
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+    VirtualFreeEx(hProcess, pRemote, 0, MEM_RELEASE);
+    CloseHandle(hProcess);
 
     return true;
 }
