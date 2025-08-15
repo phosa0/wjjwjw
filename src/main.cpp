@@ -112,7 +112,7 @@ void populate_process_list() {
 
         wchar_t pid_str[20];
         swprintf(pid_str, 20, L"%lu", processes[i].pid);
-        ListView_SetItemTextW(g_h_process_list, i, 1, pid_str); // ✅ W version
+        ListView_SetItemTextW(g_h_process_list, i, 1, pid_str); // ✅ Unicode
     }
 }
 
