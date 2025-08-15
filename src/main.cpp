@@ -20,6 +20,7 @@ void populate_process_list();
 void handle_inject();
 void handle_browse();
 
+// ✅ Unicode entry point
 int WINAPI wWinMain(HINSTANCE h_instance, HINSTANCE h_prev_instance, PWSTR lp_cmd_line, int n_cmd_show) {
     const wchar_t CLASS_NAME[] = L"DllInjectorWindowClass";
     WNDCLASSW wc = {};
