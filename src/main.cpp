@@ -1,161 +1,144 @@
-#define UNICODE
-#define _UNICODE
-
-#include <Windows.h>
-#include <CommCtrl.h>
+#include <windows.h>
+#include <commctrl.h>
+#include <cstdio>
 #include <string>
-#include <vector>
-#include "../include/injector.h"
-#include "../include/resource.h"
 
-#pragma comment(lib, "comctl32.lib")
+// Function declarations
+DWORD WINAPI InjectDLL(LPVOID lpParam);
 
-HWND g_h_wnd;
-HWND g_h_process_list;
-HWND g_h_dll_path_edit;
+// Global variables
+HWND hListView;
+HINSTANCE g_hInstance;
 
-LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param);
-void create_controls(HWND hwnd);
-void populate_process_list();
-void handle_inject();
-void handle_browse();
+// Custom data structure for ListView
+typedef struct {
+    LPWSTR fileName;
+    DWORD fileSize;
+} FileInfo;
 
-int WINAPI wWinMain(HINSTANCE h_instance, HINSTANCE h_prev_instance, PWSTR lp_cmd_line, int n_cmd_show) {
-    const wchar_t CLASS_NAME[] = L"DllInjectorWindowClass";
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = wnd_proc;
-    wc.hInstance = h_instance;
-    wc.lpszClassName = CLASS_NAME;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    RegisterClassW(&wc);
+// Function to handle messages for the main window
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_CREATE: {
+            // Initialize ListView common controls
+            INITCOMMONCONTROLSEX icex;
+            icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+            icex.dwICC = ICC_LISTVIEW_CLASSES;
+            InitCommonControlsEx(&icex);
 
-    g_h_wnd = CreateWindowExW(
-        0, CLASS_NAME, L"Simple DLL Injector",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 500, 400,
-        NULL, NULL, h_instance, NULL
-    );
+            // Create the ListView control
+            hListView = CreateWindowExW(
+                0,
+                WC_LISTVIEWW,
+                L"",
+                WS_VISIBLE | WS_CHILD | LVS_REPORT,
+                10, 10, 480, 200,
+                hwnd,
+                (HMENU)1001,
+                g_hInstance,
+                NULL);
 
-    if (!g_h_wnd) return 0;
+            // Add columns to the ListView
+            LVCOLUMNW lvc;
+            lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+            lvc.fmt = LVCFMT_LEFT;
 
-    ShowWindow(g_h_wnd, n_cmd_show);
-    UpdateWindow(g_h_wnd);
+            lvc.iSubItem = 0;
+            lvc.cx = 250;
+            lvc.pszText = (LPWSTR)L"File Name";
+            ListView_InsertColumn(hListView, 0, &lvc);
 
-    MSG msg = {};
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
+            lvc.iSubItem = 1;
+            lvc.cx = 100;
+            lvc.pszText = (LPWSTR)L"File Size";
+            ListView_InsertColumn(hListView, 1, &lvc);
 
-    return 0;
-}
+            // Example data
+            FileInfo info1;
+            info1.fileName = (LPWSTR)L"example.dll";
+            info1.fileSize = 12345;
 
-LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM w_param, LPARAM l_param) {
-    switch (msg) {
-        case WM_CREATE:
-            create_controls(hwnd);
-            populate_process_list();
+            FileInfo info2;
+            info2.fileName = (LPWSTR)L"another.dll";
+            info2.fileSize = 67890;
+
+            // Add items to the ListView
+            LVITEMW lvi;
+            lvi.mask = LVIF_TEXT;
+            lvi.iSubItem = 0;
+            lvi.iItem = 0;
+            lvi.pszText = info1.fileName;
+            ListView_InsertItem(hListView, &lvi);
+            ListView_SetItemText(hListView, 0, 1, (LPWSTR)std::to_wstring(info1.fileSize).c_str());
+
+            lvi.iItem = 1;
+            lvi.pszText = info2.fileName;
+            ListView_InsertItem(hListView, &lvi);
+            ListView_SetItemText(hListView, 1, 1, (LPWSTR)std::to_wstring(info2.fileSize).c_str());
+
             break;
+        }
         case WM_COMMAND:
-            switch (LOWORD(w_param)) {
-                case IDC_REFRESH_BUTTON: populate_process_list(); break;
-                case IDC_INJECT_BUTTON: handle_inject(); break;
-                case IDC_BROWSE_BUTTON: handle_browse(); break;
+            if (LOWORD(wParam) == 1001) {
+                // Handle ListView events
             }
             break;
         case WM_DESTROY:
             PostQuitMessage(0);
             break;
         default:
-            return DefWindowProc(hwnd, msg, w_param, l_param);
+            return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     }
     return 0;
 }
 
-void create_controls(HWND hwnd) {
-    g_h_process_list = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-        WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
-        10, 10, 350, 300, hwnd, (HMENU)IDC_PROCESS_LIST, NULL, NULL);
+// Entry point for the application (wWinMain for Unicode compatibility)
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+    g_hInstance = hInstance;
+    const wchar_t CLASS_NAME[] = L"Sample Window Class";
 
-    LVCOLUMNW lvc = {};
-    lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-    lvc.cx = 250; lvc.pszText = (LPWSTR)L"Process Name";
-    ListView_InsertColumn(g_h_process_list, 0, &lvc);
-    lvc.cx = 100; lvc.pszText = (LPWSTR)L"PID";
-    ListView_InsertColumn(g_h_process_list, 1, &lvc);
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = CLASS_NAME;
 
-    CreateWindowW(L"BUTTON", L"Refresh", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        370, 10, 100, 30, hwnd, (HMENU)IDC_REFRESH_BUTTON, NULL, NULL);
-
-    g_h_dll_path_edit = CreateWindowW(L"EDIT", L"", WS_BORDER | WS_CHILD | WS_VISIBLE,
-        10, 320, 260, 25, hwnd, (HMENU)IDC_DLL_PATH_EDIT, NULL, NULL);
-
-    CreateWindowW(L"BUTTON", L"Browse...", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        280, 320, 80, 25, hwnd, (HMENU)IDC_BROWSE_BUTTON, NULL, NULL);
-
-    CreateWindowW(L"BUTTON", L"Inject", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        370, 50, 100, 30, hwnd, (HMENU)IDC_INJECT_BUTTON, NULL, NULL);
-}
-
-void populate_process_list() {
-    ListView_DeleteAllItems(g_h_process_list);
-    std::vector<ProcessInfo> processes = get_process_list();
-
-    for (int i = 0; i < processes.size(); ++i) {
-        LVITEMW lvi = {};
-        lvi.mask = LVIF_TEXT | LVIF_PARAM;
-        lvi.iItem = i;
-        lvi.pszText = (LPWSTR)processes[i].name.c_str();
-        lvi.lParam = (LPARAM)processes[i].pid;
-        ListView_InsertItem(g_h_process_list, &lvi);
-
-        wchar_t pid_str[20];
-        swprintf(pid_str, 20, L"%lu", processes[i].pid);
-        ListView_SetItemTextW(g_h_process_list, i, 1, pid_str); // ✅ Unicode
-    }
-}
-
-void handle_inject() {
-    int selected_item = ListView_GetNextItem(g_h_process_list, -1, LVNI_SELECTED);
-    if (selected_item == -1) {
-        MessageBoxW(g_h_wnd, L"Please select a process.", L"Error", MB_OK | MB_ICONERROR);
-        return;
+    if (!RegisterClassW(&wc)) {
+        MessageBoxW(NULL, L"Window Registration Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
+        return 0;
     }
 
-    LVITEMW lvi = {};
-    lvi.mask = LVIF_PARAM;
-    lvi.iItem = selected_item;
-    ListView_GetItem(g_h_process_list, &lvi);
-    DWORD pid = (DWORD)lvi.lParam;
+    HWND hwnd = CreateWindowExW(
+        0,
+        CLASS_NAME,
+        L"Injector GUI",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 520, 300,
+        NULL,
+        NULL,
+        hInstance,
+        NULL);
 
-    wchar_t dll_path[MAX_PATH];
-    GetWindowTextW(g_h_dll_path_edit, dll_path, MAX_PATH);
-
-    if (wcslen(dll_path) == 0) {
-        MessageBoxW(g_h_wnd, L"Please enter a DLL path.", L"Error", MB_OK | MB_ICONERROR);
-        return;
+    if (hwnd == NULL) {
+        MessageBoxW(NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
+        return 0;
     }
 
-    if (inject_dll(pid, dll_path)) {
-        MessageBoxW(g_h_wnd, L"DLL injected successfully!", L"Success", MB_OK);
+    ShowWindow(hwnd, nCmdShow);
+    UpdateWindow(hwnd);
+
+    // Create a new thread for DLL injection (example usage)
+    HANDLE hThread = CreateThread(NULL, 0, InjectDLL, (LPVOID)L"C:\\path\\to\\your.dll", 0, NULL);
+    if (hThread) {
+        CloseHandle(hThread);
     } else {
-        MessageBoxW(g_h_wnd, L"Failed to inject DLL.", L"Error", MB_OK | MB_ICONERROR);
+        MessageBoxW(NULL, L"Failed to create injection thread!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
     }
-}
 
-void handle_browse() {
-    wchar_t file_name[MAX_PATH] = { 0 };
-    OPENFILENAMEW ofn = { 0 };
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = g_h_wnd;
-    ofn.lpstrFile = file_name;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"DLL Files (*.dll)\0*.dll\0All Files (*.*)\0*.*\0";
-    ofn.nFilterIndex = 1;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-    if (GetOpenFileNameW(&ofn)) {
-        SetWindowTextW(g_h_dll_path_edit, file_name);
+    MSG msg = {};
+    while (GetMessageW(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
     }
+
+    return (int)msg.wParam;
 }
