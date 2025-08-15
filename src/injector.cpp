@@ -17,7 +17,7 @@ bool inject_dll(DWORD processID, const std::wstring& dllPath) {
 
     WriteProcessMemory(hProcess, pRemote, dllPath.c_str(), pathLen, NULL);
 
-    // ✅ Make sure to use Unicode GetModuleHandle
+    // ✅ Unicode version
     HMODULE h_kernel32 = GetModuleHandleW(L"kernel32.dll");
     FARPROC loadLibAddr = GetProcAddress(h_kernel32, "LoadLibraryW");
     if (!loadLibAddr) {
