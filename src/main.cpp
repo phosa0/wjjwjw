@@ -20,7 +20,6 @@ void populate_process_list();
 void handle_inject();
 void handle_browse();
 
-// ✅ Standard WinMain for MinGW
 int WINAPI WinMain(HINSTANCE h_instance, HINSTANCE h_prev_instance, LPSTR lp_cmd_line, int n_cmd_show) {
     const wchar_t CLASS_NAME[] = L"DllInjectorWindowClass";
     WNDCLASSW wc = {};
@@ -113,7 +112,7 @@ void populate_process_list() {
 
         wchar_t pid_str[20];
         swprintf(pid_str, 20, L"%lu", processes[i].pid);
-        ListView_SetItemTextW(g_h_process_list, i, 1, pid_str);
+        ListView_SetItemTextW(g_h_process_list, i, 1, pid_str); // ✅ Unicode version
     }
 }
 
